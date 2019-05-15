@@ -7,7 +7,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace HTTP_FILE_SERVER
+namespace http_file_server
 {
     public class Http_server
     {
@@ -130,21 +130,32 @@ namespace HTTP_FILE_SERVER
         {
             try
             {
+                var head = request.Headers["x-copy-from"];
                 string fullPath = Directory.GetCurrentDirectory() + request.RawUrl;
-                var catalog = Path.GetDirectoryName(fullPath);
-
-                if (!Directory.Exists(catalog))
+                string[] list = head.Split('/');
+                if (head == null)
                 {
-                    Directory.CreateDirectory(catalog);
-                }
+                    
+                    var catalog = Path.GetDirectoryName(fullPath);
 
-                using (var newFile = new FileStream(fullPath, FileMode.Create))//error if send exist directory
+                    if (!Directory.Exists(catalog))
+                    {
+                        Directory.CreateDirectory(catalog);
+                    }
+
+                    using (var newFile = new FileStream(fullPath, FileMode.Create))//error if send exist directory
+                    {
+                        request.InputStream.CopyTo(newFile);
+
+                    }
+
+                    return;
+                }
+                else
                 {
-                    request.InputStream.CopyTo(newFile);
-
+                    File.Copy(Directory.GetCurrentDirectory()+head, fullPath+list.Last());
                 }
-
-                return;
+               
             }
             finally
             {
