@@ -30,27 +30,37 @@ namespace http_file_server
                     var request = context.Request.HttpMethod;
                     Console.WriteLine(request);
                     HttpListenerResponse response = context.Response;
-                    switch (request)
+                    try
                     {
-                        case "GET":
-                            getCommand(context.Request, ref response);
-                            break;
-                        case "PUT":
-                            {
-                                putCommand(context.Request, ref response);
-                                break;
-                            }
-                        case "HEAD":
-                            {
-                                headCommand(context.Request, ref response);
-                                break;
-                            }
-                        case "DELETE":
-                            {
-                                deleteCommand(context.Request, ref response);
-                                break;
-                            }
 
+
+                        switch (request)
+
+                        {
+                            case "GET":
+                                getCommand(context.Request, response);
+                                break;
+                            case "PUT":
+                                {
+                                    putCommand(context.Request, response);
+                                    break;
+                                }
+                            case "HEAD":
+                                {
+                                    headCommand(context.Request, response);
+                                    break;
+                                }
+                            case "DELETE":
+                                {
+                                    deleteCommand(context.Request, response);
+                                    break;
+                                }
+
+                        }
+                    }
+                    catch
+                    {
+                        response.StatusCode = 404;
                     }
 
 
@@ -64,10 +74,11 @@ namespace http_file_server
         }
 
 
-        public void getCommand(HttpListenerRequest request, ref HttpListenerResponse response)
+        public void getCommand(HttpListenerRequest request, HttpListenerResponse response)
         {
             Stream output = response.OutputStream;
 
+            // using
             var writer = new StreamWriter(output);
 
             string fullPath = Directory.GetCurrentDirectory() + request.RawUrl;
@@ -77,24 +88,19 @@ namespace http_file_server
 
                 if (!File.Exists(fullPath))
                 {
-
-                    var directories = Directory.GetDirectories(fullPath);
-                    foreach (var entry in directories)
+                    var result = new List<object>();
+                    foreach (var entry in Directory.GetDirectories(fullPath).Concat(Directory.GetFiles(fullPath)))
                     {
 
-                        var obj = new { name = entry.Substring(Directory.GetCurrentDirectory().Length), creationTime = Directory.GetCreationTime(entry) };
-                        writer.Write(JsonConvert.SerializeObject(obj));
-
-
+                        result.Add(new
+                        {
+                            name = entry.Substring(Directory.GetCurrentDirectory().Length),
+                            creationTime = Directory.GetCreationTime(entry)
+                        });
                     }
-                    foreach (var entry in Directory.GetFiles(fullPath))
-                    {
-                        var obj = new { name = entry.Substring(Directory.GetCurrentDirectory().Length), creationTime = Directory.GetCreationTime(entry) };
-                        writer.Write(JsonConvert.SerializeObject(obj));
 
-                    }
+                    writer.Write(JsonConvert.SerializeObject(result));
                     writer.Flush();
-
                 }
                 else
                 {
@@ -110,14 +116,10 @@ namespace http_file_server
                     }
                     catch (Exception ex)
                     {
-                        response.StatusCode = 400;
+                        response.StatusCode = 500;
                         writer.Write($"Local error happened: {ex.Message}.");
                     }
                 }
-            }
-            catch
-            {
-                response.StatusCode = 404;
             }
             finally
             {
@@ -126,16 +128,17 @@ namespace http_file_server
             }
         }
 
-        public void putCommand(HttpListenerRequest request, ref HttpListenerResponse response)
+        public void putCommand(HttpListenerRequest request, HttpListenerResponse response)
         {
             try
             {
+
                 var head = request.Headers["x-copy-from"];
                 string fullPath = Directory.GetCurrentDirectory() + request.RawUrl;
-                string[] list = head.Split('/');
+
                 if (head == null)
                 {
-                    
+
                     var catalog = Path.GetDirectoryName(fullPath);
 
                     if (!Directory.Exists(catalog))
@@ -143,7 +146,7 @@ namespace http_file_server
                         Directory.CreateDirectory(catalog);
                     }
 
-                    using (var newFile = new FileStream(fullPath, FileMode.Create))//error if send exist directory
+                    using (var newFile = new FileStream(fullPath, FileMode.Create))
                     {
                         request.InputStream.CopyTo(newFile);
 
@@ -153,9 +156,18 @@ namespace http_file_server
                 }
                 else
                 {
-                    File.Copy(Directory.GetCurrentDirectory()+head, fullPath+list.Last());
+                    string[] list = head.Split('/');
+                    try
+                    {
+                        File.Copy(Directory.GetCurrentDirectory() + head, fullPath + '/' + list.Last());
+                    }
+                    catch
+                    {
+                        response.StatusCode = 501;
+                    }
+
                 }
-               
+
             }
             finally
             {
@@ -165,7 +177,7 @@ namespace http_file_server
 
         }
 
-        public void headCommand(HttpListenerRequest request, ref HttpListenerResponse response)
+        public void headCommand(HttpListenerRequest request, HttpListenerResponse response)
         {
             try
             {
@@ -192,10 +204,6 @@ namespace http_file_server
                 }
 
             }
-            catch
-            {
-                response.StatusCode = 404;
-            }
             finally
             {
                 response.OutputStream.Close();
@@ -204,28 +212,31 @@ namespace http_file_server
 
         }
 
-        public void deleteCommand(HttpListenerRequest request, ref HttpListenerResponse response)
+        public void deleteCommand(HttpListenerRequest request, HttpListenerResponse response)
         {
             try
             {
-
+                string name = Directory.GetCurrentDirectory() + "/";
                 string fullPath = Directory.GetCurrentDirectory() + request.RawUrl;
+                if (fullPath == name)
+                {
+                    response.StatusCode = 403;
+                    return;
+                }
                 if (Directory.Exists(fullPath))
                 {
-                    Directory.Delete(fullPath);
-
-
+                    Directory.Delete(fullPath, true);
                 }
                 else if (File.Exists(fullPath))
                 {
                     File.Delete(fullPath);
 
                 }
+                else
+                {
+                    response.StatusCode = 404;
+                }
 
-            }
-            catch
-            {
-                response.StatusCode = 404;
             }
             finally
             {
